@@ -1,0 +1,80 @@
+.\"	@(#) RestyleOdt.1 
+.\"
+.TH RESTYLEODT 1 "14 Dec 2009"
+.AT 3
+.SH NAME
+RestyleOdt \- remap odt paragraph and span types
+.SH SYNOPSIS
+.B RestyleOdt
+.B {---rebalance|--restyle} [-opts] file.xml
+file.xml ...
+.sp 0
+.SH DESCRIPTION
+.I RestyleOdt
+is used to remap paragraph and span types in ODT xml.
+It is derived from PetersonOdt, which was 
+used to repair irregularities in  the Peterson paragraph
+and character styles, for their Word-base processing scheme.
+
+.PP
+The program loads and repeatedly traverses an odt xml doc
+to apply a seqence of semantic repairs. The core of the
+program is based on "ExampleExtractor.java" in 
+"Processing XML with Java" by Elliotte Rusty Harold, 
+http://www.cafeconleche.org/books/xmljava.
+.PP
+
+The transformations are independent, and all leave the
+source in a well-formed state, but with no guarantees about
+initial or eventual validity. 
+
+.PP
+The transforms are 
+ebr
+--restyle) Remap paragraph types to those provided by the template
+.br
+---rebalance) Map subordinate header hierarchies into H[0-9]
+.PP
+Either or both can be specified
+
+.TP
+.B \-d
+toggles debugging output to stderr. Debugging test will
+never start with filename and linenumber, so it can be 
+distinguised from error messages.
+
+.TP
+.B \--inserted-heading <pattern>
+for \--rebalance, identify the subordinate heading hierarchy
+
+.TP
+.B \--paragraph-map <file>
+for \--restyle, specify a paragraph map file
+
+.TP
+.B \--span-map <file>
+for restyle, specify a span map file
+
+.TP
+.B --template <file>
+for either, load a table of allowed styles, and diagnose anything
+that doesn't match.
+
+.SH FILES
+.sp 0
+
+.SH "SEE ALSO"
+
+
+.SH BUGS
+
+.SH DIAGNOSTICS
+
+.SH COMPATIBILITY
+
+.SH CHANGES
+
+.SH ACKNOWLEDGEMENTS
+
+.SH AUTHOR
+David Collier-Brown

@@ -1,0 +1,8 @@
+This is a paragraph and span style remapper, used when you need
+to correct a style throughout a publication, such as when you
+need to confirm to a stringent template for xml processing.
+
+It also checks styles against a standard, maps variants
+back to their parents and rebalances sub-hierarchies.
+
+--dave

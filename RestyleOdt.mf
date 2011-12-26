@@ -1,0 +1,6 @@
+Main-Class: RestyleOdt
+Implementation-Title:  RestyleOdt
+Class-Path: /glp/code/getopt/java-getopt-1.0.13.jar /glp/code/xerces-2_9_0/xercesImpl.jar /glp/code/xerces-2_9_0/serializer.jar
+Implementation-Version: 0.1
+Sealed: true
+
