@@ -17,8 +17,6 @@
  *   along with this program; if not, write to the Free Software
  *   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
-
- */
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.HashMap;
@@ -38,9 +36,6 @@ public class OdtRestyle {
 	new HashMap<String,String>();
     private HashMap<String,String> saveMap = null;
     private ReadMapFile rm = new ReadMapFile();
-    private Pattern p = Pattern.compile("P[0-9]"); /* Known bad para type. */
-    private Pattern t = Pattern.compile("T[0-9]"); /* Known bad style. */
-    private Matcher m, n;
     boolean debug = false;
     boolean verbose = false;
 
@@ -49,6 +44,8 @@ public class OdtRestyle {
     */
     public OdtRestyle(boolean debug, boolean verbose,
 	String paraMapFile, String spanMapFile, String templateFile) {
+
+	dl("instantiating OdtRestyle");
 	this.debug = debug;
 	this.verbose = verbose;
 	/* Initialize hash tables. */
@@ -58,13 +55,20 @@ public class OdtRestyle {
 
   /**
     * Find all text paras in a document and ensure they are converted into
-    * one of the legal values.
+    * one of the legal values, or at least to their root value.
     */
     public void remapParaStyles(Document doc) {
-	/* Save the para map, and then augment it from <style> tags. */
-	saveMap = new HashMap(paraMappings);
-	augmentMap(paraMappings, doc, "paragraph");
+	HashMap<String,Node> spansToAdd = new HashMap<String,Node>();
 
+	dl("begin remapParaStyles");
+	/* Get per-document spans to add from the <style> tags. */
+	collectSpans(doc, spansToAdd);
+	/* Save the para map, and then augment it from <style> tags. */
+	HashMap<String,String> augmentedMap = 
+		new HashMap<String,String>(paraMappings);
+	augmentMap(augmentedMap, doc, "paragraph");
+	
+	/* Fix all the paragraph nodes. */
 	NodeList paraTagList =  doc.getElementsByTagName("text:p");
 	if (paraTagList.getLength() == 0) {
 		dl("No <text:p> tags to process, returning.");
@@ -75,23 +79,32 @@ public class OdtRestyle {
 		Element tag = (Element) paraTagList.item(i);
 		String value = tag.getAttribute("text:style-name");
 		if (value != null) {
-			repairStyle(tag, value, 
-				allowedParaStyles, paraMappings);
+			repairStyle(tag, value, allowedParaStyles, 
+				augmentedMap, spansToAdd);
                 }
-               // else ill-formed
+		else {
+			/* And ill-formed node. */
+			el("Warning: text:p node with no style-name "
+				+ "encountered, ignored.");
+		}
 	}
-	paraMappings = saveMap;
+	dl("end remapParaStyles");
 	return;
     }
     
   /**
     * Conditionally repair a paragraph node by changing it's style,
-    * guided by a provided map and an allowed set
+    * guided by a provided map and an allowed set. If it is repaired,
+    * look and see if we need to prepend a style to its children.
     */
     private void repairStyle(Element tag, String from, 
-		HashSet allowedStyles, HashMap<String,String> reMappings) {
+		HashSet allowedStyles, 
+		HashMap<String,String> reMappings,
+		HashMap<String,Node> spansToAdd) {
 	String to = null;
-	dl("style is " + from);
+	Node extraSpan = null;
+
+	dl("repairStyle, style is " + from);
 	if (allowedStyles.contains(from)) {
 		/* This is a supported style */
 		dl("It's ok");
@@ -101,6 +114,9 @@ public class OdtRestyle {
                 try {
 			dl("remapped " + from + " to " + to);
                         tag.setAttribute("text:style-name", to);
+			if ((extraSpan = spansToAdd.get(from)) != null) {
+				insertSpan(tag, extraSpan);	
+			}
                 } catch (DOMException e) {
                         /* Should never happen, but if it does,,, */
                         throw new RuntimeException(e);
@@ -121,6 +137,7 @@ public class OdtRestyle {
     private void augmentMap(HashMap<String,String> map, 
 					Document doc, String styleFamily) {
 	 
+	dl("begin augmentMap");
 	NodeList styleTagList = doc.getElementsByTagName("style:style");
 	if (styleTagList.getLength() == 0) {
                 dl("no <style:style> tags found, returning.");
@@ -139,20 +156,86 @@ public class OdtRestyle {
 			map.put(from, to);
 		}
 	}
+	dl("end augmentMap");
+    } 
+
+   /**
+    * Create spans for all the P1-99 nodes, containing the differences
+    * between them and their parent, so we can map them back to their
+    * parents without losing information.
+    */
+    void collectSpans(Document doc, HashMap<String,Node> map) {
+
+	dl("begin collectSpans");
+	NodeList styleList = doc.getElementsByTagName("style:style");
+	if (styleList.getLength() == 0) {
+		dl("No <span:span> tags to process, returning.");
+		return;
+	}
+	for (int i = 0; i < styleList.getLength(); i++) {
+		Element tag = (Element) styleList.item(i);
+		String name = tag.getAttribute("style:name");
+		if (tag.getAttribute("style:family").equals("paragraph")) {
+			NodeList children = tag.getElementsByTagName(
+						"style:paragraph-properties");
+			if (children.getLength() == 0) {
+				dl("No style:paragraph-properties, skipped");
+				continue;
+			}
+			for (int j = 0; j < children.getLength(); j++) {
+				/* Copy attributes of each such child */
+				Element child = (Element) children.item(j);
+				Element span = doc.createElement("text:span");
+				copyAttributes(span, child);
+				span.setAttribute("old-para-type", name);
+				map.put(name, span);
+				dl("added span for " + name);
+			}
+		}
+	}
+	dl("end collectSpans");
+    }
+  /**
+   * Copy attributes from one node to another.
+   */
+    void copyAttributes(Element to, Element from) {
+
+	//dl("begin copyAttributes" + from);
+	NamedNodeMap n = from.getAttributes();
+	for (int i = 0; i < n.getLength(); i++) {
+		Attr attr =  (Attr) n.item(i);
+		to.setAttribute(attr.getName(), attr.getValue());
+		//dl("set " + attr.getName() + " = " + attr.getValue());
+	}
     }
 
-  /**
-    * Find all spans in a document and ensure they are converted into
-    * one of the legal values.
+   /**
+    * Insert a span as the replacement child.
+    */
+    void insertSpan(Node parentNode, Node span) {
+	NodeList children = parentNode.getChildNodes();
+	for (int i = 0; i < children.getLength(); i++) {
+		Node child = children.item(i);
+		parentNode.removeChild(child);
+		span.appendChild(child);
+	}
+	parentNode.appendChild(span);
+
+    }
+
+   /**
+    * Now repeat the mapping process with all the of the spans in a document.
     */
     public void remapSpanStyles(Document doc) {
+
+	dl("begin remapSpanStyles");
 	/* Save the span map, and then augment it from <style> tags. */
-	saveMap = new HashMap(spanMappings);
-	augmentMap(spanMappings, doc, "span");
+	HashMap<String,String> augmentedMap = 
+		new HashMap<String,String>(spanMappings);
+	augmentMap(augmentedMap, doc, "span");
 	NodeList spanTagList = doc.getElementsByTagName("text:span");
 	if (spanTagList.getLength() == 0) {
 		dl("No <text:span> tags to process, returning.");
-		paraMappings = saveMap;
 		return;
 	}
 	for (int i = 0; i < spanTagList.getLength(); i++ ) {
@@ -160,11 +243,15 @@ public class OdtRestyle {
 		String value = tag.getAttribute("text:style-name");
 		if (value != null) {
 			repairStyle(tag, value, 
-				allowedSpanStyles, spanMappings);
+				allowedSpanStyles, augmentedMap, null);
                 }
-               // else ill-formed
+		else {
+			/* Ill-formed node. */
+			el("Warning: text:span with no style-name "
+				+ "encountered, ignored");
+               }
 	}
-	paraMappings = saveMap;
+	dl("end remapSpanStyles");
 	return;
     }
 
@@ -172,7 +259,8 @@ public class OdtRestyle {
    * Load a map from a file. Currently takes any name-value pair found
    * between <type> and </type> tags.
    */
-    private HashMap loadMap(HashMap m, String fileName, String type) {
+    private HashMap<String,String> loadMap(HashMap<String,String> m, 
+					String fileName, String type) {
 	if (rm.readMapFile(fileName, type, m, debug)) {
 		return m;
 	}
